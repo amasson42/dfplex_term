@@ -580,11 +580,11 @@ def handle_key(key, conn):
         conn.send_key(9, 0, 0)
         return True
 
-    # Printable ASCII / unicode: use the "unicode path" (keyCode=0, charCode=ch)
+    # Printable ASCII / unicode
     if 32 <= key <= 126:
-        # Space needs to go through keyCode path, not unicode path
         if key == 32:
-            conn.send_key(32, 0, 0)
+            # Space: send via both paths so it works in menus AND text input
+            conn.send_key(32, 32, 0)
         else:
             conn.send_key(0, key, 0)
         return True
