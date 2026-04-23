@@ -1,0 +1,16 @@
+
+services:
+  dfserver:
+    build: .
+    container_name: df_multiplayer
+    ports:
+      - "2222:22"     # SSH (friends connect here)
+      - "1234:1234"   # DFPlex WebSocket (terminal client)
+      - "8000:8000"   # DFPlex HTTP (browser fallback)
+    volumes:
+      - df_saves:/home/dfplayer/df/data/save   # persist your fortress!
+    restart: unless-stopped
+    shm_size: '256mb'
+
+volumes:
+  df_saves:

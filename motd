@@ -1,0 +1,17 @@
+
+╔══════════════════════════════════════════════════════════╗
+║        DWARF FORTRESS  ·  DFPlex Multiplayer Server      ║
+╠══════════════════════════════════════════════════════════╣
+║                                                          ║
+║  FIRST TIME SETUP (host only, once):                     ║
+║    screen -r dwarf     ← attach to DF title screen       ║
+║    [navigate to your fortress with arrow keys + Enter]   ║
+║    Ctrl-A then D       ← detach (DF keeps running)       ║
+║                                                          ║
+║  PLAY (everyone):                                        ║
+║    dfplex              ← connect to the running fortress ║
+║    Ctrl-T              ← request your turn               ║
+║    Ctrl-Q              ← disconnect                      ║
+║                                                          ║
+╚══════════════════════════════════════════════════════════╝
+
