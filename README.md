@@ -1,161 +1,203 @@
 # dfplex-term
 
-A **real terminal client** for [DFPlex](https://github.com/white-rabbit-dfplex/dfplex) multiplayer Dwarf Fortress.
+Multiplayer Dwarf Fortress in your terminal, via SSH.
 
-Each player SSH-es in and gets their **own independent view, cursor, and menus** — exactly as DFPlex was designed. No shared tmux session, no fighting over one screen.
-
----
-
-## How it works
-
-DFPlex runs inside a Docker container. It serves a WebSocket on port 1234
-with per-player screen buffers (CP437 chars + 16-colour DF palette, delta-encoded).
-`dfplex_client.py` connects over that WebSocket, decodes the frames, and renders them
-as ANSI colour in your terminal using Python's `curses`. Keypresses are translated
-back to JS key codes and sent to the server, which injects them into DF via DFHack.
+Each player gets their own independent view and cursor thanks to DFPlex.
+No browser needed — pure terminal.
 
 ---
 
-## Setup
+## Quick Start
 
-### 1. Assemble the DF bundle  (one-time, ~5 minutes)
-
-DFPlex targets **Dwarf Fortress Classic 0.47.05** + **DFHack 0.47.05-r7**.
-
-```bash
-mkdir df_bundle && cd df_bundle
-
-# 1. Dwarf Fortress Classic (free, Linux)
-wget http://www.bay12games.com/dwarves/df_47_05_linux.tar.bz2
-tar xjf df_47_05_linux.tar.bz2
-mv df_linux/* .
-rmdir df_linux
-
-# 2. DFHack — extract ON TOP of DF folder
-wget https://github.com/DFHack/dfhack/releases/download/0.47.05-r7/dfhack-0.47.05-r7-Linux-64bit-gcc-7.tar.bz2
-tar xjf dfhack-0.47.05-r7-Linux-64bit-gcc-7.tar.bz2
-
-# 3. DFPlex — extract ON TOP of DF+DFHack
-wget https://github.com/white-rabbit-dfplex/dfplex/releases/download/v0.2.1-dfplex/dfplex-v0.2.1.zip
-unzip dfplex-v0.2.1.zip
-
-cd ..
-```
-
-Your directory should now look like:
-```
-dfplex-term/
-  df_bundle/          ← DF + DFHack + DFPlex merged
-    dfhack             (executable)
-    libs/
-    hack/
-    data/
-    ...
-  dfplex_client.py
-  Dockerfile
-  docker-compose.yml
-  entrypoint.sh
-  motd
-  README.md
-```
-
-### 2. Build and start the server
+### 1. Build and start
 
 ```bash
 docker-compose up -d --build
 ```
 
-DF + DFHack starts automatically inside the container. It may take 10–20 seconds
-to reach the title screen on first launch.
+The Dockerfile automatically downloads:
+- Dwarf Fortress Classic 0.47.04
+- DFHack 0.47.04-r1
+- DFPlex v0.2.1
 
-### 3. Connect (you and your friend)
+**First build takes ~5 minutes** (downloading ~200MB).
 
-**Option A: SSH into the container, then run the client locally**
+### 2. First time setup (once)
 
 ```bash
-# On your machine (host):
-ssh dfplayer@localhost -p 2222
+ssh dfplayer@YOUR_IP -p 2222
 # password: dwarves
 
-# Once inside, just run:
-dfplex
-
-# Your friend (replace with your public IP):
-ssh dfplayer@YOUR_IP -p 2222
-# then: dfplex
+screen -r dwarf          # attach to DF (escape key is Ctrl-X, not Ctrl-A)
+# → navigate title screen, embark or load a world
+# → once in fortress, press Ctrl-S to save
+Ctrl-X then D            # detach (DF keeps running)
 ```
 
-**Option B: Run the client directly on your local machine (no SSH)**
-
-If port 1234 is reachable:
+### 3. Play
 
 ```bash
+# Install client dependency once
 pip install websocket-client
-python3 dfplex_client.py YOUR_SERVER_IP 1234 YourNick
+
+# Connect from any machine
+python3 dfplex_client.py YOUR_IP 1234 YourNick
 ```
+
+Friend connects:
+```bash
+python3 dfplex_client.py YOUR_IP 1234 FriendNick
+```
+
+After the first save, DF auto-loads the fortress on container restart.
 
 ---
 
-## Controls
+## Client controls
 
 | Key | Action |
 |-----|--------|
-| Arrow keys | Move cursor / navigate |
-| All standard DF keys | Work as normal |
-| `Ctrl-T` | Request your turn token (become active player) |
-| `Ctrl-Q` | Disconnect (DF keeps running, fortress is safe) |
-| `F1`–`F12` | Function keys |
-| `Esc` | Cancel / back |
+| Arrow keys | Move cursor / scroll map |
+| Space | Pause / unpause |
+| All standard DF keys | Work normally |
+| `\` | Toggle multiplexing (separate views per player) |
+| `Ctrl-T` | Request your turn token |
+| `Ctrl-Q` | Disconnect from dfplex (DF keeps running) |
 
 ---
 
-## Changing the password
+## Useful commands
+
+### Container management
 
 ```bash
-docker exec -it df_multiplayer passwd dfplayer
+# Start the server
+docker-compose up -d
+
+# Stop the server
+docker-compose down
+
+# Rebuild from scratch (after updating files)
+docker-compose down && docker-compose up -d --build
+
+# View container logs
+docker logs df_multiplayer
+
+# Open a shell inside the container
+docker exec -it df_multiplayer bash
 ```
 
-Or add SSH key auth — edit `/etc/ssh/sshd_config` in the container and add
-your public key to `/home/dfplayer/.ssh/authorized_keys`.
+### Manually launching DF inside the container
+
+If DF isn't running (e.g. after a crash), SSH in and run:
+
+```bash
+ssh dfplayer@YOUR_IP -p 2222
+
+# Launch DF with DFHack in a persistent screen session
+TERM=xterm-256color \
+LD_LIBRARY_PATH=.:libs:./hack/libs:./hack \
+LD_PRELOAD=./hack/libdfhack.so \
+./libs/Dwarf_Fortress
+```
+
+Or wrap it in screen so it survives disconnects:
+
+```bash
+screen -dmS dwarf bash -c '
+    cd ~/df
+    TERM=xterm-256color \
+    LD_LIBRARY_PATH=.:libs:./hack/libs:./hack \
+    LD_PRELOAD=./hack/libdfhack.so \
+    ./libs/Dwarf_Fortress 2>&1 | tee ~/df.log
+'
+screen -r dwarf   # attach (Ctrl-X D to detach)
+```
+
+### Checking DF status
+
+```bash
+# Is DF running?
+pgrep -a Dwarf_Fortress
+
+# Is DFPlex listening?
+cat ~/df/dfplex_server.log
+
+# Check for errors
+cat ~/df/stderr.log | tail -20
+cat ~/df/df.log | tail -20
+
+# Is dfplex plugin loaded?
+~/df/hack/dfhack-run plug dfplex
+
+# Manually load a save
+~/df/hack/dfhack-run load-save region1
+```
+
+### Fixing missing libs (after rebuild)
+
+If DF fails with missing library errors:
+
+```bash
+# Run from outside the container
+docker exec -it df_multiplayer bash -c "
+    sudo cp ~/df/hack/libdfhack.so /usr/local/lib/
+    sudo cp ~/df/hack/libdfhack-client.so /usr/local/lib/
+    sudo cp ~/df/hack/liblua.so /usr/local/lib/
+    sudo cp ~/df/hack/libprotobuf-lite.so /usr/local/lib/
+    sudo ldconfig
+    ln -sf /lib/x86_64-linux-gnu/libncursesw.so.6 /usr/lib/x86_64-linux-gnu/libncursesw.so.5
+    ln -sf /lib/x86_64-linux-gnu/libncurses.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5
+    sudo ldconfig
+"
+```
+
+### Save management
+
+```bash
+# Export saves to a file
+./saves.sh export
+# → saves_2026-04-23_14-30.tar.gz
+
+# Import saves into running container
+./saves.sh import saves_2026-04-23_14-30.tar.gz
+
+# List saves inside a backup
+./saves.sh list saves_2026-04-23_14-30.tar.gz
+```
 
 ---
 
-## Port reference
+## Ports
 
 | Port | Purpose |
 |------|---------|
-| `2222` | SSH (players connect here) |
-| `1234` | DFPlex WebSocket (terminal client) |
-| `8000` | DFPlex HTTP (browser fallback — still works!) |
-
----
-
-## Saves
-
-Fort saves are stored in a named Docker volume (`df_saves`) and persist
-across container restarts. To back up:
-
-```bash
-docker run --rm -v df_saves:/saves -v $(pwd):/out ubuntu \
-    tar czf /out/saves_backup.tar.gz /saves
-```
+| 2222 | SSH (setup and administration) |
+| 1234 | DFPlex WebSocket (dfplex_client.py) |
+| 8000 | DFPlex HTTP (browser fallback) |
 
 ---
 
 ## Troubleshooting
 
-**Screen looks garbled / wrong characters:**
-Your terminal must support UTF-8. Run: `echo $LANG` — should show `UTF-8`.
-Also ensure your terminal font includes CP437 characters (e.g. DejaVu Sans Mono,
-Cascadia Code, or any "Nerd Font").
+**`Error opening terminal: alacritty` or similar**
+Your terminal type isn't known inside the container. Fix:
+```bash
+export TERM=xterm-256color
+```
+Add to `~/.bashrc` to make it permanent.
 
-**Colours look wrong:**
-Run `echo $TERM` — should be `xterm-256color`. Export it if not:
-`export TERM=xterm-256color`.
+**Screen steals my keys**
+The escape key is `Ctrl-X` (not `Ctrl-A`). Detach with `Ctrl-X D`.
 
-**DF hasn't started yet:**
-Check logs: `docker exec df_multiplayer cat /home/dfplayer/df_stdout.log`
+**dfplex shows blank screen**
+DF is probably at the title screen. Attach with `screen -r dwarf`, load your fortress, save with `Ctrl-S`, then detach.
 
-**DFPlex plugin not found:**
-Make sure `hack/plugins/dfplex.so` exists in your `df_bundle`. It should be
-included in the DFPlex zip release.
+**`Disconnected (code=None)` in dfplex client**
+DFPlex plugin isn't running. Check `cat ~/df/stderr.log | grep dfplex`.
+
+**Keys not working in dfplex**
+Make sure you're in fortress mode (not the title screen). Press `\` to toggle multiplexing, then try your keys.
+
+**Save not persisting across container restarts**
+Make sure you save with `Ctrl-S` before stopping. The Docker volume `df_saves` stores saves — don't use `docker-compose down -v` or you'll lose them.

@@ -1,6 +1,127 @@
 #!/usr/bin/env python3
 """
 dfplex-term: A terminal client for DFPlex multiplayer Dwarf Fortress.
+"""
+
+import sys
+import os
+import subprocess
+import platform
+
+# ---------------------------------------------------------------------------
+# Font setup — install a CP437-compatible font if needed
+# ---------------------------------------------------------------------------
+
+FONT_NAME = "Terminus"
+FONT_URL_LINUX = "https://files.ax86.net/terminus-ttf/files/latest/terminus-ttf.zip"
+FONT_URL_MAC   = "https://files.ax86.net/terminus-ttf/files/latest/terminus-ttf.zip"
+
+def _run(cmd, **kwargs):
+    return subprocess.run(cmd, shell=True, capture_output=True, text=True, **kwargs)
+
+def check_font_installed():
+    """Check if a CP437-capable font is available."""
+    system = platform.system()
+    if system == "Linux":
+        result = _run("fc-list | grep -i terminus")
+        return result.returncode == 0 and result.stdout.strip()
+    elif system == "Darwin":
+        result = _run("fc-list | grep -i terminus")
+        return result.returncode == 0 and result.stdout.strip()
+    return True  # unknown system, assume ok
+
+def install_font():
+    """Try to install Terminus font automatically."""
+    system = platform.system()
+    installed = False
+
+    if system == "Linux":
+        # Try package manager first
+        for cmd in [
+            "apt-get install -y fonts-terminus 2>/dev/null",
+            "pacman -S --noconfirm terminus-font 2>/dev/null",
+            "dnf install -y terminus-fonts 2>/dev/null",
+        ]:
+            if _run(f"sudo {cmd}").returncode == 0:
+                installed = True
+                break
+
+        if not installed:
+            # Manual install to ~/.local/share/fonts
+            font_dir = os.path.expanduser("~/.local/share/fonts")
+            os.makedirs(font_dir, exist_ok=True)
+            tmp = "/tmp/terminus-ttf.zip"
+            if _run(f"wget -q '{FONT_URL_LINUX}' -O {tmp}").returncode == 0:
+                if _run(f"unzip -o {tmp} '*.ttf' -d {font_dir}").returncode == 0:
+                    _run("fc-cache -f")
+                    installed = True
+
+    elif system == "Darwin":
+        # Try homebrew
+        if _run("brew install --cask font-terminus 2>/dev/null").returncode == 0:
+            installed = True
+        if not installed:
+            font_dir = os.path.expanduser("~/Library/Fonts")
+            os.makedirs(font_dir, exist_ok=True)
+            tmp = "/tmp/terminus-ttf.zip"
+            if _run(f"curl -sL '{FONT_URL_MAC}' -o {tmp}").returncode == 0:
+                if _run(f"unzip -o {tmp} '*.ttf' -d {font_dir}").returncode == 0:
+                    installed = True
+
+    return installed
+
+def setup_font():
+    """Check for CP437 font, offer to install if missing."""
+    # Skip if user set env var to disable
+    if os.environ.get("DFPLEX_NO_FONT_CHECK"):
+        return
+
+    # Skip if already marked as done
+    marker = os.path.expanduser("~/.dfplex_font_ok")
+    if os.path.exists(marker):
+        return
+
+    if check_font_installed():
+        open(marker, 'w').close()
+        return
+
+    print("╔══════════════════════════════════════════════════════╗")
+    print("║  dfplex-term: CP437 font not detected                ║")
+    print("║                                                      ║")
+    print("║  Dwarf Fortress uses special box-drawing characters  ║")
+    print("║  that require a compatible font (e.g. Terminus).     ║")
+    print("║                                                      ║")
+    print("║  Install Terminus font automatically? [Y/n]          ║")
+    print("╚══════════════════════════════════════════════════════╝")
+
+    try:
+        answer = input("  → ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        answer = "n"
+
+    if answer in ("", "y", "yes"):
+        print("Installing Terminus font...")
+        if install_font():
+            print("✓ Font installed!")
+            print("  Please set your terminal font to 'Terminus' or 'xos4 Terminus'")
+            print("  at size 16 for best results.")
+            open(marker, 'w').close()
+        else:
+            print("✗ Auto-install failed.")
+            print("  Install manually:")
+            print("    Linux:  sudo apt-get install fonts-terminus")
+            print("    Mac:    brew install --cask font-terminus")
+            print("    Or download from: https://files.ax86.net/terminus-ttf/")
+    else:
+        print("Skipping. Set DFPLEX_NO_FONT_CHECK=1 to suppress this message.")
+        open(marker, 'w').close()
+
+    print()
+
+setup_font()
+
+"""
+dfplex-term: A terminal client for DFPlex multiplayer Dwarf Fortress.
 
 Connects to DFPlex's WebSocket (port 1234 by default), renders the
 curses screen buffer as ANSI colour in your terminal, and sends
