@@ -245,10 +245,10 @@ def setup_colors(stdscr):
             # curses uses 0-1000 scale
             curses.init_color(i, r * 1000 // 255, g * 1000 // 255, b * 1000 // 255)
 
-    # Initialise all fg×bg pairs
+    # Initialise all fg×bg pairs — respect terminal's COLOR_PAIRS limit
+    # (PowerShell, Git Bash and minimal terminals may have fewer than 256)
     max_pairs = curses.COLOR_PAIRS - 1
-
-    index = 0
+    index = 1  # pair 0 is reserved
     for fg in range(16):
         for bg in range(16):
             if index > max_pairs:
@@ -377,7 +377,11 @@ def parse_frame(data, screen):
 # ---------------------------------------------------------------------------
 class DFPlexConnection:
     def __init__(self, host, port, nick, screen):
-        self.uri    = f"ws://{host}:{port}/{urllib.parse.quote(nick)}/secret"
+        if port is None:
+            # No port: connect via nginx proxy on 443 with wss://
+            self.uri = f"wss://{host}/df/{urllib.parse.quote(nick)}/secret"
+        else:
+            self.uri = f"ws://{host}:{port}/{urllib.parse.quote(nick)}/secret"
         self.screen = screen
         self.ws     = None
         self.connected = False
@@ -629,7 +633,10 @@ def main(stdscr, args):
                     screen.dirty = True
 
     with screen.lock:
-        screen.status = f"Connecting to {args.host}:{args.port} as '{args.nick}'…"
+        if args.port:
+            screen.status = f"Connecting to {args.host}:{args.port} as '{args.nick}'…"
+        else:
+            screen.status = f"Connecting to {args.host}/df (wss proxy) as '{args.nick}'…"
 
     conn.connect()
     threading.Thread(target=on_connected, daemon=True).start()
@@ -671,11 +678,35 @@ def main(stdscr, args):
         except curses.error:
             key = -1
 
-        if key != -1:
+        if key == 27:
+            # Read ahead to detect Shift+Enter escape sequence \x1b[13;2u
+            seq = []
+            for _ in range(7):
+                try:
+                    nk = stdscr.getch()
+                except curses.error:
+                    nk = -1
+                if nk == -1:
+                    break
+                seq.append(nk)
+            seq_str = ''.join(chr(c) for c in seq)
+            # Debug: log sequence to file
+            with open('/tmp/dfplex_keys.log', 'a') as f:
+                f.write(f"ESC seq: {repr(seq_str)}\n")
+            if seq_str == '[13;2u':
+                conn.send_key(13, 0, MOD_SHIFT)
+            else:
+                # Real ESC
+                conn.send_key(27, 0, 0)
+                for c in seq:
+                    handle_key(c, conn)
+
+        elif key != -1:
             if not handle_key(key, conn):
                 break  # quit
 
         time.sleep(0.01)
+
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -683,26 +714,25 @@ def main(stdscr, args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="dfplex-term: terminal client for DFPlex multiplayer DF")
+    parser.add_argument("host", nargs="?", default="localhost")
+    parser.add_argument("port_or_nick", nargs="?", default=None)
+    parser.add_argument("nick", nargs="?", default=None)
+    raw = parser.parse_args()
 
-    parser.add_argument("host", nargs="?", default="localhost",
-                        help="DFPlex server host (default: localhost)")
-
-    # Port is now optional and has no default
-    parser.add_argument("port", nargs="?", type=int,
-                        help="DFPlex WebSocket port (optional)")
-
-    parser.add_argument("nick", nargs="?", default="Urist",
-                        help="Your player nickname (default: Urist)")
-
-    args = parser.parse_args()
-
-    # Build URL depending on whether port was provided
-    if args.port is not None:
-        ws_url = f"ws://{args.host}:{args.port}"
+    class Args: pass
+    args = Args()
+    args.host = raw.host
+    if raw.port_or_nick is not None and raw.port_or_nick.isdigit():
+        args.port = int(raw.port_or_nick)
+        args.nick = raw.nick or "Urist"
     else:
-        ws_url = f"ws://{args.host}"
+        args.port = None
+        args.nick = raw.port_or_nick or raw.nick or "Urist"
 
-    print(f"dfplex-term connecting to {ws_url} as '{args.nick}'")
+    if args.port:
+        print(f"dfplex-term connecting to ws://{args.host}:{args.port} as '{args.nick}'")
+    else:
+        print(f"dfplex-term connecting to wss://{args.host}/df (proxy, port 443) as '{args.nick}'")
     print("Controls:  Ctrl-Q = quit   Ctrl-T = request turn")
     print("Starting in 1 second…")
     time.sleep(1)
@@ -711,5 +741,4 @@ if __name__ == "__main__":
         curses.wrapper(main, args)
     except KeyboardInterrupt:
         pass
-
     print("Disconnected. May your fortress stand eternal.")
