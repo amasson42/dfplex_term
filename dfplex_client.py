@@ -246,11 +246,17 @@ def setup_colors(stdscr):
             curses.init_color(i, r * 1000 // 255, g * 1000 // 255, b * 1000 // 255)
 
     # Initialise all fg×bg pairs
+    max_pairs = curses.COLOR_PAIRS - 1
+
+    index = 0
     for fg in range(16):
         for bg in range(16):
+            if index > max_pairs:
+                break
             cf = fg if has_256 else _approx_ansi(fg)
             cb = bg if has_256 else _approx_ansi(bg)
-            curses.init_pair(pair_index(fg, bg), cf, cb)
+            curses.init_pair(index, cf, cb)
+            index += 1
 
     return has_256
 
@@ -665,35 +671,11 @@ def main(stdscr, args):
         except curses.error:
             key = -1
 
-        if key == 27:
-            # Read ahead to detect Shift+Enter escape sequence \x1b[13;2u
-            seq = []
-            for _ in range(7):
-                try:
-                    nk = stdscr.getch()
-                except curses.error:
-                    nk = -1
-                if nk == -1:
-                    break
-                seq.append(nk)
-            seq_str = ''.join(chr(c) for c in seq)
-            # Debug: log sequence to file
-            with open('/tmp/dfplex_keys.log', 'a') as f:
-                f.write(f"ESC seq: {repr(seq_str)}\n")
-            if seq_str == '[13;2u':
-                conn.send_key(13, 0, MOD_SHIFT)
-            else:
-                # Real ESC
-                conn.send_key(27, 0, 0)
-                for c in seq:
-                    handle_key(c, conn)
-
-        elif key != -1:
+        if key != -1:
             if not handle_key(key, conn):
                 break  # quit
 
         time.sleep(0.01)
-
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -701,15 +683,26 @@ def main(stdscr, args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="dfplex-term: terminal client for DFPlex multiplayer DF")
+
     parser.add_argument("host", nargs="?", default="localhost",
                         help="DFPlex server host (default: localhost)")
-    parser.add_argument("port", nargs="?", type=int, default=1234,
-                        help="DFPlex WebSocket port (default: 1234)")
+
+    # Port is now optional and has no default
+    parser.add_argument("port", nargs="?", type=int,
+                        help="DFPlex WebSocket port (optional)")
+
     parser.add_argument("nick", nargs="?", default="Urist",
                         help="Your player nickname (default: Urist)")
+
     args = parser.parse_args()
 
-    print(f"dfplex-term connecting to ws://{args.host}:{args.port} as '{args.nick}'")
+    # Build URL depending on whether port was provided
+    if args.port is not None:
+        ws_url = f"ws://{args.host}:{args.port}"
+    else:
+        ws_url = f"ws://{args.host}"
+
+    print(f"dfplex-term connecting to {ws_url} as '{args.nick}'")
     print("Controls:  Ctrl-Q = quit   Ctrl-T = request turn")
     print("Starting in 1 second…")
     time.sleep(1)
@@ -718,4 +711,5 @@ if __name__ == "__main__":
         curses.wrapper(main, args)
     except KeyboardInterrupt:
         pass
+
     print("Disconnected. May your fortress stand eternal.")
