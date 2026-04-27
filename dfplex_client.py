@@ -665,7 +665,30 @@ def main(stdscr, args):
         except curses.error:
             key = -1
 
-        if key != -1:
+        if key == 27:
+            # Read ahead to detect Shift+Enter escape sequence \x1b[13;2u
+            seq = []
+            for _ in range(7):
+                try:
+                    nk = stdscr.getch()
+                except curses.error:
+                    nk = -1
+                if nk == -1:
+                    break
+                seq.append(nk)
+            seq_str = ''.join(chr(c) for c in seq)
+            # Debug: log sequence to file
+            with open('/tmp/dfplex_keys.log', 'a') as f:
+                f.write(f"ESC seq: {repr(seq_str)}\n")
+            if seq_str == '[13;2u':
+                conn.send_key(13, 0, MOD_SHIFT)
+            else:
+                # Real ESC
+                conn.send_key(27, 0, 0)
+                for c in seq:
+                    handle_key(c, conn)
+
+        elif key != -1:
             if not handle_key(key, conn):
                 break  # quit
 

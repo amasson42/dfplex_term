@@ -8,6 +8,7 @@ services:
       - "2222:22"     # SSH
       - "1234:1234"   # DFPlex WebSocket
       - "8000:8000"   # DFPlex HTTP (browser fallback)
+      - "8001:8001"   # Client download
     volumes:
       - df_saves:/home/dfplayer/df/data/save   # persist fortress saves
     restart: unless-stopped

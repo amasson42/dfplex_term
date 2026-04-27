@@ -92,7 +92,9 @@ RUN echo 'escape ^Xx' > /home/dfplayer/.screenrc && \
     chown dfplayer:dfplayer /home/dfplayer/.screenrc
 
 # ── Terminal client ───────────────────────────────────────────────────────
+RUN mkdir -p /usr/local/share/dfplex
 COPY dfplex_client.py /usr/local/bin/dfplex
+COPY dfplex_client.py /usr/local/share/dfplex/dfplex_client.py
 RUN chmod +x /usr/local/bin/dfplex
 
 # ── MOTD ──────────────────────────────────────────────────────────────────
